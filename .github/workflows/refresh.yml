@@ -1,0 +1,33 @@
+name: Daily DLD data refresh
+on:
+  schedule:
+    - cron: "45 1 * * *"   # 05:45 Dubai time, daily
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Pull latest DLD data
+        run: python scripts/daily_pull.py
+      - name: Aggregate and rebuild dashboard
+        run: |
+          python scripts/aggregate.py
+          python scripts/build.py
+      - name: Commit and push
+        run: |
+          git config user.name "dld-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data docs
+          git diff --cached --quiet || git commit -m "Daily DLD refresh $(date -u +%F)"
+          git push
