@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Aggregate DLD raw monthly pulls (data/sales_*.jsonl.gz, data/rents_*.jsonl.gz)
-into a compact payload for the dashboard. Outputs docs/payload.json.gz.b64"""
+into a compact payload for the dashboard. Outputs docs/payload.b64.
+Optionally merges data/history_agg.b64 (pre-2026 aggregates from the cleaned
+research dataset) for months before live API coverage."""
 import gzip, json, base64, glob, os, statistics, sys
 from datetime import date, datetime, timedelta
 
@@ -67,25 +69,22 @@ def beds_code(rooms):
 def med(vals):
     return round(statistics.median(vals), 1) if vals else None
 
-def q(vals, p):
-    if not vals: return None
-    vs = sorted(vals); k = (len(vs) - 1) * p
-    f = int(k); c = min(f + 1, len(vs) - 1)
-    return round(vs[f] + (vs[c] - vs[f]) * (k - f), 1)
-
 def load(kind):
-    rows = []
     for fp in sorted(glob.glob(os.path.join(DATA, f"{kind}_*.jsonl.gz"))):
         with gzip.open(fp, "rt") as f:
             for line in f:
-                rows.append(json.loads(line))
-    return rows
+                yield json.loads(line)
+
+def norm_area(s):
+    s = (s or "Unknown").strip() or "Unknown"
+    return " ".join(w if (w.isupper() and len(w) <= 3) else w.title() for w in s.split())
 
 def main():
     sales, rents = load("sales"), load("rents")
+    n_sales = n_rents = 0
     areas, projects = {}, {}
     def aidx(name):
-        name = (name or "Unknown").strip()
+        name = norm_area(name)
         if name not in areas: areas[name] = len(areas)
         return areas[name]
     def pidx(name):
@@ -101,6 +100,7 @@ def main():
     # ---- sales ----
     s_groups, s_micro = {}, []
     for r in sales:
+        n_sales += 1
         try:
             d = datetime.fromisoformat(r["INSTANCE_DATE"][:19])
         except Exception:
@@ -129,6 +129,7 @@ def main():
     # ---- rents ----
     r_groups, r_micro = {}, []
     for r in rents:
+        n_rents += 1
         try:
             d = datetime.fromisoformat(r["REGISTRATION_DATE"][:19])
         except Exception:
@@ -153,6 +154,25 @@ def main():
     rents_agg = [[k[0], k[1], k[2], k[3], g["n"], med(g["v"]), med(g["p"])]
                  for k, g in sorted(r_groups.items())]
 
+    # ---- pre-2026 history from cleaned research dataset (optional) ----
+    hist_p = os.path.join(DATA, "history_agg.b64")
+    live_from = min((r[0] for r in sales_agg), default="2026-01")
+    if os.path.exists(hist_p):
+        hist = json.loads(gzip.decompress(base64.b64decode(open(hist_p).read())))
+        hs = hr = 0
+        for row in hist.get("salesAgg", []):
+            if row[0] < live_from:
+                sales_agg.append([row[0], aidx(row[1]), row[2], row[3], row[4],
+                                  row[5], row[6], row[7], row[8]])
+                hs += 1
+        live_rents_from = min((r[0] for r in rents_agg), default="2026-01")
+        for row in hist.get("rentsAgg", []):
+            if row[0] < live_rents_from:
+                rents_agg.append([row[0], aidx(row[1]), row[2], row[3], row[4], row[5], row[6]])
+                hr += 1
+        sales_agg.sort(key=lambda r: r[0]); rents_agg.sort(key=lambda r: r[0])
+        print(f"history merged: sales {hs} rows, rents {hr} rows (months before {live_from})")
+
     area_list = [a for a, _ in sorted(areas.items(), key=lambda x: x[1])]
     proj_list = [p for p, _ in sorted(projects.items(), key=lambda x: x[1])]
     payload = {
@@ -172,8 +192,8 @@ def main():
     b64 = base64.b64encode(gzip.compress(raw, 9)).decode()
     with open(os.path.join(DOCS, "payload.b64"), "w") as f:
         f.write(b64)
-    print(f"sales rows={len(sales)} aggRows={len(sales_agg)} micro={len(s_micro)}")
-    print(f"rents rows={len(rents)} aggRows={len(rents_agg)} micro={len(r_micro)}")
+    print(f"sales rows={n_sales} aggRows={len(sales_agg)} micro={len(s_micro)}")
+    print(f"rents rows={n_rents} aggRows={len(rents_agg)} micro={len(r_micro)}")
     print(f"payload raw={len(raw)//1024}KB b64gz={len(b64)//1024}KB areas={len(area_list)}")
 
 if __name__ == "__main__":
