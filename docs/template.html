@@ -159,7 +159,7 @@ async function loadPayload(){
 /* ---------- state ---------- */
 const RESI=["Apartment","Villa/Townhouse"];
 const COMM=["Office","Retail","Land - Commercial","Land - Residential","Land - Industrial","Land - Other","Warehouse/Industrial","Building","Hospitality","Other"];
-const PERIODS=[["3M",3],["6M",6],["12M",12],["All",999]];
+const PERIODS=[["3M",3],["6M",6],["12M",12],["24M",24],["All",999]];
 const BEDS=[[-2,"All"],[0,"Studio"],[1,"1BR"],[2,"2BR"],[3,"3BR"],[4,"4BR"],[5,"5BR+"]];
 function defState(){return {mode:"sales",tab:"resi",period:6,areas:new Set(),cats:new Set(),beds:-2,reg:-1,drillProj:null};}
 
@@ -608,9 +608,10 @@ loadPayload().then(d=>{
   $("#foot").innerHTML="";
   const f=$("#foot");
   f.append(Object.assign(CE("div"),{textContent:
-    `Data: Dubai Land Department open transaction & Ejari registers (dubailand.gov.ae). Sales history from Jan 2026 (earliest the DLD open API serves); it accumulates daily from here. `+
-    `Trend medians are volume-weighted across the filtered segments. Sizes converted at 1 sqm = 10.764 sqft. `+
-    `Detailed row-level records are held for the recent window noted above each table; use Export CSV for the full filtered set.`}));
+    `Data: Dubai Land Department open transaction & Ejari registers (dubailand.gov.ae). From Jan 2026: live DLD open API, refreshed daily. Earlier months: cleaned DLD bulk dataset `+
+    `(duplicates, clone clusters and data-entry outliers excluded per documented rules; historic rentals are residential only, grouped by submarket, by lease start date). `+
+    `Trend medians are volume-weighted across the filtered segments. Villa/townhouse AED/sqft is plot-basis and not comparable with apartment rates — compare within class. `+
+    `Sizes converted at 1 sqm = 10.764 sqft. Row-level records are held for the recent window noted above each table; use Export CSV for the full filtered set.`}));
   render();
 }).catch(e=>{$("#loading").textContent="Failed to load data payload: "+e.message;});
 </script>
