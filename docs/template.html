@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dubai Real Estate Monitor — DLD Transactions & Rents</title>
+<style>
+:root{
+  color-scheme: light;
+  --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10);
+  --s1:#2a78d6; --s2:#008300; --s3:#e87ba4; --s4:#eda100; --s5:#1baf7a; --s6:#eb6834;
+  --up:#006300; --down:#d03b3b; --accent:#2a78d6;
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --page:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+  --s1:#3987e5; --s2:#008300; --s3:#d55181; --s4:#c98500; --s5:#199e70; --s6:#d95926;
+  --up:#0ca30c; --down:#e66767; --accent:#3987e5;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --page:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+    --s1:#3987e5; --s2:#008300; --s3:#d55181; --s4:#c98500; --s5:#199e70; --s6:#d95926;
+    --up:#0ca30c; --down:#e66767; --accent:#3987e5;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:18px 22px 10px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+header h1{font-size:19px;margin:0 auto 0 0;font-weight:650}
+header .sub{width:100%;color:var(--muted);font-size:12px;margin-top:-6px}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:none;color:var(--ink2);padding:7px 15px;font:inherit;font-weight:550;cursor:pointer}
+.seg button.on{background:var(--accent);color:#fff}
+.iconbtn{border:1px solid var(--border);background:var(--surface);color:var(--ink2);border-radius:9px;padding:7px 11px;cursor:pointer;font:inherit}
+#filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:4px 22px 12px}
+.chip{border:1px solid var(--border);background:var(--surface);color:var(--ink2);border-radius:16px;padding:5px 12px;cursor:pointer;font-size:13px;user-select:none}
+.chip.on{border-color:var(--accent);color:var(--accent);font-weight:600;background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
+select,input[type=search]{border:1px solid var(--border);background:var(--surface);color:var(--ink);border-radius:9px;padding:6px 9px;font:inherit}
+.flabel{color:var(--muted);font-size:12px;margin-left:6px}
+main{padding:0 22px 30px;max-width:1360px;margin:0 auto}
+#crumb{padding:2px 22px 8px;font-size:13px;color:var(--ink2)}
+#crumb a{color:var(--accent);cursor:pointer;text-decoration:none}
+#kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 15px}
+.kpi .lb{color:var(--muted);font-size:12px}
+.kpi .v{font-size:25px;font-weight:650;margin-top:2px}
+.kpi .d{font-size:12px;margin-top:3px;color:var(--muted)}
+.kpi .d .pos{color:var(--up);font-weight:600}.kpi .d .neg{color:var(--down);font-weight:600}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:980px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px;position:relative}
+.card h3{margin:0 0 2px;font-size:14px;font-weight:650}
+.card .hint{color:var(--muted);font-size:12px;margin-bottom:8px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--ink2);margin:2px 0 4px;flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i{width:14px;height:3px;border-radius:2px;display:inline-block}
+.legend i.box{height:10px;width:10px;border-radius:3px}
+svg{display:block;width:100%}
+svg text{font:11px system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--muted)}
+.tip{position:fixed;pointer-events:none;background:var(--surface);border:1px solid var(--border);border-radius:9px;
+     padding:8px 11px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.18);z-index:50;display:none;min-width:150px}
+.tip .t{color:var(--muted);margin-bottom:4px}
+.tip .r{display:flex;align-items:center;gap:6px;margin-top:2px}
+.tip .r i{width:12px;height:3px;border-radius:2px;flex:none}
+.tip .r b{margin-left:auto;font-weight:650;color:var(--ink)}
+.tip .r span{color:var(--ink2)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{color:var(--muted);font-weight:600;text-align:left;padding:7px 9px;border-bottom:1px solid var(--grid);cursor:pointer;white-space:nowrap;user-select:none}
+th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
+td{padding:6px 9px;border-bottom:1px solid var(--grid);color:var(--ink2)}
+td:first-child{color:var(--ink)}
+tr.clickable{cursor:pointer}
+tr.clickable:hover td{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.tblwrap{overflow-x:auto;max-height:520px;overflow-y:auto}
+.bar-row{display:grid;grid-template-columns:170px 1fr 118px;gap:8px;align-items:center;padding:3px 0;cursor:pointer;border-radius:6px}
+.bar-row:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.bar-row .nm{font-size:12.5px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
+.bar-row .tr{height:15px;border-radius:0 4px 4px 0;background:var(--s1);min-width:2px}
+.bar-row .vl{font-size:12px;color:var(--ink2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.bar-row .vl b{color:var(--ink)}
+details{margin-top:8px}
+summary{color:var(--muted);font-size:12px;cursor:pointer}
+footer{color:var(--muted);font-size:12px;padding:10px 22px 26px;max-width:1360px;margin:0 auto}
+footer a{color:var(--accent)}
+#loading{padding:80px;text-align:center;color:var(--muted)}
+.count-note{color:var(--muted);font-size:12px}
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.toolbar .sp{margin-left:auto}
+#areaBox{position:relative}
+#areaMenu{position:absolute;top:110%;left:0;z-index:40;background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;box-shadow:0 6px 22px rgba(0,0,0,.18);width:280px;max-height:320px;overflow-y:auto;padding:6px;display:none}
+#areaMenu label{display:flex;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--ink2)}
+#areaMenu label:hover{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+#areaMenu input[type=search]{width:100%;margin-bottom:6px}
+.empty{color:var(--muted);padding:32px;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>Dubai Real Estate Monitor</h1>
+  <div class="seg" id="modeSeg">
+    <button data-m="sales" class="on">Sales</button><button data-m="rent">Rent</button>
+  </div>
+  <div class="seg" id="tabSeg">
+    <button data-t="resi" class="on">Residential</button><button data-t="comm">Commercial</button>
+  </div>
+  <button class="iconbtn" id="themeBtn" title="Toggle light/dark">◐</button>
+  <div class="sub" id="updated"></div>
+</header>
+
+<div id="filters">
+  <div class="seg" id="periodSeg"></div>
+  <div id="areaBox">
+    <button class="iconbtn" id="areaBtn">All areas ▾</button>
+    <div id="areaMenu"></div>
+  </div>
+  <span id="catChips"></span>
+  <span id="bedChips"></span>
+  <div class="seg" id="regSeg"></div>
+</div>
+<div id="crumb"></div>
+
+<main id="app"><div id="loading">Loading data…</div></main>
+
+<footer id="foot"></footer>
+<div class="tip" id="tip"></div>
+
+<script id="payload" type="text/plain">__PAYLOAD_B64__</script>
+<script>
+"use strict";
+const $=s=>document.querySelector(s), CE=(t,c)=>{const e=document.createElement(t); if(c)e.className=c; return e;};
+const fmt=n=>n==null?"–":n>=1e9?(n/1e9).toFixed(2)+"B":n>=1e6?(n/1e6).toFixed(2)+"M":n>=1e4?Math.round(n/1e3)+"k":n>=100?Math.round(n).toLocaleString("en"):(+n).toLocaleString("en",{maximumFractionDigits:1});
+const fmtF=n=>n==null?"–":Math.round(n).toLocaleString("en");
+const pct=(a,b)=>(a!=null&&b)?((a-b)/b*100):null;
+const SQMF=10.7639;
+let D=null, S=null;
+
+/* ---------- theme ---------- */
+$("#themeBtn").onclick=()=>{
+  const r=document.documentElement, cur=r.dataset.theme||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");
+  r.dataset.theme=cur==="dark"?"light":"dark"; render();
+};
+
+/* ---------- data load ---------- */
+async function loadPayload(){
+  const b64=$("#payload").textContent.trim();
+  const bin=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+  const ds=new DecompressionStream("gzip");
+  const stream=new Blob([bin]).stream().pipeThrough(ds);
+  const buf=await new Response(stream).arrayBuffer();
+  return JSON.parse(new TextDecoder().decode(buf));
+}
+
+/* ---------- state ---------- */
+const RESI=["Apartment","Villa/Townhouse"];
+const COMM=["Office","Retail","Land - Commercial","Land - Residential","Land - Industrial","Land - Other","Warehouse/Industrial","Building","Hospitality","Other"];
+const PERIODS=[["3M",3],["6M",6],["12M",12],["All",999]];
+const BEDS=[[-2,"All"],[0,"Studio"],[1,"1BR"],[2,"2BR"],[3,"3BR"],[4,"4BR"],[5,"5BR+"]];
+function defState(){return {mode:"sales",tab:"resi",period:6,areas:new Set(),cats:new Set(),beds:-2,reg:-1,drillProj:null};}
+
+/* ---------- helpers over payload ---------- */
+function catList(){return S.tab==="resi"?RESI:COMM;}
+function catIdxSet(){
+  const base=catList().filter(c=>S.cats.size?S.cats.has(c):true);
+  return new Set(base.map(c=>D.cats.indexOf(c)));
+}
+function ymList(){
+  const set=new Set();
+  (S.mode==="sales"?D.salesAgg:D.rentsAgg).forEach(r=>set.add(r[0]));
+  const all=[...set].sort();
+  return S.period>=999?all:all.slice(-S.period);
+}
+function aggRows(){
+  const cs=catIdxSet(), yms=new Set(ymList());
+  const src=S.mode==="sales"?D.salesAgg:D.rentsAgg;
+  return src.filter(r=>{
+    if(!yms.has(r[0])||!cs.has(r[2]))return false;
+    if(S.areas.size&&!S.areas.has(r[1]))return false;
+    if(S.mode==="sales"){
+      if(S.reg>=0&&r[3]!==S.reg)return false;
+      if(S.beds>=0&&(S.beds===5?r[4]<5:r[4]!==S.beds))return false;
+    } else {
+      if(S.reg>=0&&r[3]!==S.reg)return false;
+    }
+    return true;
+  });
+}
+function txRows(){
+  const cs=catIdxSet();
+  const src=S.mode==="sales"?D.salesTx:D.rentsTx;
+  const cut=ymList()[0];
+  return src.filter(r=>{
+    if(r[0].slice(0,7)<cut)return false;
+    if(!cs.has(r[2]))return false;
+    if(S.areas.size&&!S.areas.has(r[1]))return false;
+    if(S.reg>=0&&r[3]!==S.reg)return false;
+    if(S.mode==="sales"&&S.beds>=0&&(S.beds===5?r[4]<5:r[4]!==S.beds))return false;
+    if(S.drillProj!=null&&r[S.mode==="sales"?7:6]!==S.drillProj)return false;
+    return true;
+  });
+}
+/* weighted median of group medians */
+function wMed(rows,vi,ni){
+  const pairs=rows.filter(r=>r[vi]!=null).map(r=>[r[vi],r[ni]]).sort((a,b)=>a[0]-b[0]);
+  const tot=pairs.reduce((s,p)=>s+p[1],0);
+  if(!tot)return null;
+  let acc=0;
+  for(const p of pairs){acc+=p[1]; if(acc>=tot/2)return p[0];}
+  return pairs.length?pairs[pairs.length-1][0]:null;
+}
+const NI=s=>s==="sales"?5:4;           // count index in agg row
+const PI=s=>s==="sales"?7:6;           // median psf index
+const VI=s=>s==="sales"?6:5;           // median value index
+
+/* ---------- KPI ---------- */
+function kpis(rows){
+  const m=S.mode, yms=ymList();
+  const n=rows.reduce((s,r)=>s+r[NI(m)],0);
+  const psf=wMed(rows,PI(m),NI(m));
+  const val=wMed(rows,VI(m),NI(m));
+  const totV=m==="sales"?rows.reduce((s,r)=>s+(r[8]||0),0):null;
+  const lastYm=yms[yms.length-1], prevYm=yms[yms.length-2];
+  const yAgo=lastYm?((+lastYm.slice(0,4)-1)+lastYm.slice(4)):null;
+  const cur=rows.filter(r=>r[0]===lastYm), prev=rows.filter(r=>r[0]===prevYm);
+  const allCatRows=aggRowsAllPeriod();
+  const yago=allCatRows.filter(r=>r[0]===yAgo);
+  const mom=pct(wMed(cur,PI(m),NI(m)),wMed(prev,PI(m),NI(m)));
+  const yoy=pct(wMed(cur,PI(m),NI(m)),wMed(yago,PI(m),NI(m)));
+  return {n,psf,val,totV,mom,yoy,lastYm};
+}
+function aggRowsAllPeriod(){
+  const cs=catIdxSet();
+  const src=S.mode==="sales"?D.salesAgg:D.rentsAgg;
+  return src.filter(r=>{
+    if(!cs.has(r[2]))return false;
+    if(S.areas.size&&!S.areas.has(r[1]))return false;
+    if(S.reg>=0&&r[3]!==S.reg)return false;
+    if(S.mode==="sales"&&S.beds>=0&&(S.beds===5?r[4]<5:r[4]!==S.beds))return false;
+    return true;
+  });
+}
+
+/* ---------- tooltip ---------- */
+const tip=$("#tip");
+function showTip(x,y,html){tip.innerHTML="";tip.append(html);tip.style.display="block";
+  const w=tip.offsetWidth,h=tip.offsetHeight;
+  tip.style.left=Math.min(x+14,innerWidth-w-8)+"px";
+  tip.style.top=Math.max(6,Math.min(y-h-10,innerHeight-h-8))+"px";}
+function hideTip(){tip.style.display="none";}
+function tipNode(title,rows){
+  const f=document.createDocumentFragment();
+  const t=CE("div","t");t.textContent=title;f.append(t);
+  rows.forEach(([col,lb,val])=>{
+    const r=CE("div","r"),i=CE("i");i.style.background=col;
+    const s=CE("span");s.textContent=lb;const b=CE("b");b.textContent=val;
+    if(col)r.append(i);r.append(s,b);f.append(r);
+  });
+  return f;
+}
+
+/* ---------- SVG helpers ---------- */
+const NS="http://www.w3.org/2000/svg";
+function sv(tag,attrs){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e;}
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+
+/* line chart: series=[{name,color,pts:[{x:ym,y:val,n}]}] */
+function lineChart(el,xs,series,fmtY){
+  el.innerHTML="";
+  const W=el.clientWidth||600,H=250,L=52,R=26,T=12,B=26;
+  const svg=sv("svg",{viewBox:`0 0 ${W} ${H}`,height:H});
+  const vals=series.flatMap(s=>s.pts.map(p=>p.y).filter(v=>v!=null));
+  if(!vals.length||xs.length<2){el.append(Object.assign(CE("div","empty"),{textContent:"Not enough data for this selection"}));return;}
+  let lo=Math.min(...vals),hi=Math.max(...vals);if(lo===hi){lo*=0.9;hi*=1.1;}
+  const pad=(hi-lo)*0.08;lo-=pad;hi+=pad;
+  const X=i=>L+(W-L-R)*(xs.length===1?0.5:i/(xs.length-1));
+  const Y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
+  for(let g=0;g<4;g++){
+    const v=lo+(hi-lo)*g/3;
+    svg.append(sv("line",{x1:L,x2:W-R,y1:Y(v),y2:Y(v),stroke:css("--grid"),"stroke-width":1}));
+    const t=sv("text",{x:L-6,y:Y(v)+4,"text-anchor":"end"});t.textContent=fmtY(v);svg.append(t);
+  }
+  const step=Math.ceil(xs.length/8);
+  xs.forEach((x,i)=>{if(i%step===0||i===xs.length-1){const t=sv("text",{x:X(i),y:H-8,"text-anchor":"middle"});t.textContent=x.slice(2);svg.append(t);}});
+  series.forEach(s=>{
+    let dstr="",started=false;
+    s.pts.forEach((p,i)=>{if(p.y==null){started=false;return;}dstr+=(started?"L":"M")+X(i)+","+Y(p.y);started=true;});
+    if(dstr)svg.append(sv("path",{d:dstr,fill:"none",stroke:s.color,"stroke-width":2,"stroke-linejoin":"round"}));
+    s.pts.forEach((p,i)=>{if(p.y!=null&&xs.length<=24)svg.append(sv("circle",{cx:X(i),cy:Y(p.y),r:2.5,fill:s.color}));});
+  });
+  const hair=sv("line",{y1:T,y2:H-B,stroke:css("--axis"),"stroke-width":1,visibility:"hidden"});svg.append(hair);
+  const cap=sv("rect",{x:0,y:0,width:W,height:H,fill:"transparent"});svg.append(cap);
+  cap.addEventListener("pointermove",e=>{
+    const r=svg.getBoundingClientRect();
+    const px=(e.clientX-r.left)*(W/r.width);
+    let bi=0,bd=1e9;xs.forEach((x,i)=>{const d=Math.abs(X(i)-px);if(d<bd){bd=d;bi=i;}});
+    hair.setAttribute("x1",X(bi));hair.setAttribute("x2",X(bi));hair.setAttribute("visibility","visible");
+    showTip(e.clientX,e.clientY,tipNode(xs[bi],series.map(s=>{
+      const p=s.pts[bi];return [s.color,s.name,p&&p.y!=null?fmtY(p.y)+(p.n?` (${fmt(p.n)} tx)`:""):"–"];
+    })));
+  });
+  cap.addEventListener("pointerleave",()=>{hair.setAttribute("visibility","hidden");hideTip();});
+  el.append(svg);
+}
+
+/* stacked monthly bars: series [{name,color,vals:[]}] */
+function barChart(el,xs,series){
+  el.innerHTML="";
+  const W=el.clientWidth||600,H=200,L=52,R=12,T=10,B=26;
+  const svg=sv("svg",{viewBox:`0 0 ${W} ${H}`,height:H});
+  const tots=xs.map((_,i)=>series.reduce((s,se)=>s+(se.vals[i]||0),0));
+  const hi=Math.max(...tots,1);
+  const Y=v=>T+(H-T-B)*(1-v/hi);
+  for(let g=0;g<4;g++){const v=hi*g/3;
+    svg.append(sv("line",{x1:L,x2:W-R,y1:Y(v),y2:Y(v),stroke:css("--grid"),"stroke-width":1}));
+    const t=sv("text",{x:L-6,y:Y(v)+4,"text-anchor":"end"});t.textContent=fmt(v);svg.append(t);}
+  const bw=Math.min(34,(W-L-R)/xs.length*0.66);
+  const step=Math.ceil(xs.length/8);
+  xs.forEach((x,i)=>{
+    const cx=L+(W-L-R)*(i+0.5)/xs.length;
+    if(i%step===0||i===xs.length-1){const t=sv("text",{x:cx,y:H-8,"text-anchor":"middle"});t.textContent=x.slice(2);svg.append(t);}
+    let y0=Y(0);
+    series.forEach(se=>{
+      const v=se.vals[i]||0;if(!v)return;
+      const y1=Y(series.slice(0,series.indexOf(se)+1).reduce((s,q)=>s+(q.vals[i]||0),0));
+      const h=Math.max(0,y0-y1-(series.length>1?1:0));
+      const rc=sv("rect",{x:cx-bw/2,y:y1,width:bw,height:Math.max(h,v?1.5:0),fill:se.color,rx:2});
+      rc.addEventListener("pointermove",e=>{rc.setAttribute("opacity",".82");
+        showTip(e.clientX,e.clientY,tipNode(x,series.map(q=>[q.color,q.name,fmt(q.vals[i]||0)]).concat([[null,"Total",fmt(tots[i])]])));});
+      rc.addEventListener("pointerleave",()=>{rc.removeAttribute("opacity");hideTip();});
+      svg.append(rc);y0=y1;
+    });
+  });
+  svg.append(sv("line",{x1:L,x2:W-R,y1:Y(0),y2:Y(0),stroke:css("--axis"),"stroke-width":1}));
+  el.append(svg);
+}
+
+/* ---------- rendering ---------- */
+function segBtns(el,items,cur,fn){
+  el.innerHTML="";
+  items.forEach(([val,lb])=>{
+    const b=CE("button");b.textContent=lb;if(val===cur)b.classList.add("on");
+    b.onclick=()=>{fn(val);render();};el.append(b);
+  });
+}
+function chips(el,items,sel,fn){
+  el.innerHTML="";
+  items.forEach(c=>{
+    const b=CE("span","chip"+(sel.has(c)?" on":""));b.textContent=c;
+    b.onclick=()=>{sel.has(c)?sel.delete(c):sel.add(c);fn();render();};el.append(b);
+  });
+}
+function renderFilters(){
+  segBtns($("#periodSeg"),PERIODS.map(p=>[p[1],p[0]]),S.period,v=>S.period=v);
+  chips($("#catChips"),catList(),S.cats,()=>{});
+  if(S.mode==="sales"&&S.tab==="resi"){
+    $("#bedChips").style.display="";
+    segBtns($("#bedChips"),BEDS,S.beds,v=>S.beds=v);
+    $("#bedChips").className="seg";
+  } else {$("#bedChips").style.display="none";}
+  const regs=S.mode==="sales"?[[-1,"All"],[0,"Ready"],[1,"Off-plan"]]:[[-1,"All"],[0,"New"],[1,"Renewed"]];
+  segBtns($("#regSeg"),regs,S.reg,v=>S.reg=v);
+  const btn=$("#areaBtn");
+  btn.textContent=(S.areas.size?[...S.areas].slice(0,2).map(i=>D.areas[i]).join(", ")+(S.areas.size>2?` +${S.areas.size-2}`:""):"All areas")+" ▾";
+}
+function renderAreaMenu(){
+  const menu=$("#areaMenu");menu.innerHTML="";
+  const q=CE("input");q.type="search";q.placeholder="Search areas…";menu.append(q);
+  const wrap=CE("div");menu.append(wrap);
+  const counts={};
+  (S.mode==="sales"?D.salesAgg:D.rentsAgg).forEach(r=>counts[r[1]]=(counts[r[1]]||0)+r[NI(S.mode)]);
+  const list=D.areas.map((a,i)=>[a,i,counts[i]||0]).filter(x=>x[2]>0).sort((a,b)=>b[2]-a[2]);
+  function draw(f){
+    wrap.innerHTML="";
+    list.filter(x=>!f||x[0].toLowerCase().includes(f)).slice(0,220).forEach(([a,i,n])=>{
+      const lb=CE("label"),cb=CE("input");cb.type="checkbox";cb.checked=S.areas.has(i);
+      cb.onchange=()=>{cb.checked?S.areas.add(i):S.areas.delete(i);S.drillProj=null;render();};
+      const s=CE("span");s.textContent=a;const c=CE("span");c.style.marginLeft="auto";c.style.color="var(--muted)";c.textContent=fmt(n);
+      lb.append(cb,s,c);wrap.append(lb);
+    });
+  }
+  q.oninput=()=>draw(q.value.toLowerCase());draw("");
+}
+$("#areaBtn").onclick=e=>{const m=$("#areaMenu");const open=m.style.display==="block";m.style.display=open?"none":"block";if(!open)renderAreaMenu();e.stopPropagation();};
+document.addEventListener("click",e=>{if(!$("#areaBox").contains(e.target))$("#areaMenu").style.display="none";});
+
+function crumb(){
+  const el=$("#crumb");el.innerHTML="";
+  const a=CE("a");a.textContent="Dubai (all areas)";a.onclick=()=>{S.areas.clear();S.drillProj=null;render();};
+  el.append(a);
+  if(S.areas.size){el.append(document.createTextNode(" › "));
+    const s=CE(S.drillProj!=null?"a":"span");s.textContent=[...S.areas].map(i=>D.areas[i]).join(", ");
+    if(S.drillProj!=null)s.onclick=()=>{S.drillProj=null;render();};
+    el.append(s);}
+  if(S.drillProj!=null){el.append(document.createTextNode(" › "));
+    const s=CE("span");s.textContent=D.projects[S.drillProj]||"(unnamed project)";el.append(s);}
+}
+
+function render(){
+  renderFilters();crumb();
+  const app=$("#app");app.innerHTML="";
+  const m=S.mode,rows=aggRows(),yms=ymList();
+  const k=kpis(rows);
+  const unit=m==="sales"?"AED/sqft":"AED/sqft/yr";
+  /* KPIs */
+  const kw=CE("div");kw.id="kpis";
+  const renewN=m==="rent"?rows.filter(r=>r[3]===1).reduce((s,r)=>s+r[4],0):0;
+  const tiles=[
+    [m==="sales"?"Transactions":"Contracts",fmt(k.n),null],
+    [m==="sales"?"Total value (AED)":"Median annual rent (AED)",m==="sales"?fmt((k.totV||0)*1e6):fmtF(k.val),null],
+    [m==="sales"?"Median price (AED)":"Renewal share",m==="sales"?fmtF(k.val):(k.n?Math.round(renewN/k.n*100)+"%":"–"),null],
+    ["Median "+unit,k.psf!=null?Math.round(k.psf).toLocaleString():"–",null],
+    ["MoM Δ (median "+unit+")",null,k.mom],
+    ["YoY Δ (median "+unit+")",null,k.yoy],
+  ];
+  tiles.forEach(([lb,v,delta])=>{
+    const t=CE("div","kpi");const l=CE("div","lb");l.textContent=lb;t.append(l);
+    const vv=CE("div","v");
+    if(v===null){vv.innerHTML="";const sp=CE("span");
+      sp.textContent=delta==null?"–":(delta>=0?"▲ ":"▼ ")+Math.abs(delta).toFixed(1)+"%";
+      sp.style.color=delta==null?"var(--muted)":(delta>=0?"var(--up)":"var(--down)");vv.append(sp);}
+    else vv.textContent=v==null?"–":v;
+    t.append(vv);kw.append(t);
+  });
+  app.append(kw);
+
+  /* trend + volume */
+  const g=CE("div","grid2");
+  const c1=CE("div","card");
+  const h1=CE("h3");h1.textContent=`Median ${unit} trend`;c1.append(h1);
+  const hint1=CE("div","hint");hint1.textContent=m==="sales"?"Ready vs off-plan, monthly":"New vs renewed contracts, monthly";c1.append(hint1);
+  const lgd=CE("div","legend");
+  const names=m==="sales"?["Ready","Off-plan"]:["New","Renewed"];
+  const cols=[css("--s1")||"#2a78d6",css("--s2")||"#008300"];
+  names.forEach((n,i)=>{const s=CE("span");const i2=CE("i");i2.style.background=cols[i];s.append(i2,document.createTextNode(n));lgd.append(s);});
+  c1.append(lgd);
+  const ch1=CE("div");c1.append(ch1);g.append(c1);
+
+  const c2=CE("div","card");
+  const h2=CE("h3");h2.textContent=m==="sales"?"Monthly transaction volume":"Monthly contract volume";c2.append(h2);
+  const hint2=CE("div","hint");hint2.textContent="Count of registrations per month";c2.append(hint2);
+  const lg2=lgd.cloneNode(true);c2.append(lg2);
+  const ch2=CE("div");c2.append(ch2);g.append(c2);
+  app.append(g);
+
+  const bySplit=i=>rows.filter(r=>r[3]===i);
+  const mkPts=set=>yms.map(x=>{const rr=set.filter(r=>r[0]===x);
+    return {y:wMed(rr,PI(m),NI(m)),n:rr.reduce((s,r)=>s+r[NI(m)],0)};});
+  const psfFmt=v=>Math.round(v).toLocaleString();
+  requestAnimationFrame(()=>{
+    lineChart(ch1,yms,[{name:names[0],color:cols[0],pts:mkPts(bySplit(0))},{name:names[1],color:cols[1],pts:mkPts(bySplit(1))}],psfFmt);
+    barChart(ch2,yms,[{name:names[0],color:cols[0],vals:yms.map(x=>bySplit(0).filter(r=>r[0]===x).reduce((s,r)=>s+r[NI(m)],0))},
+                      {name:names[1],color:cols[1],vals:yms.map(x=>bySplit(1).filter(r=>r[0]===x).reduce((s,r)=>s+r[NI(m)],0))}]);
+  });
+
+  /* top areas + segment mix */
+  const g2=CE("div","grid2");
+  const c3=CE("div","card");
+  const h3=CE("h3");h3.textContent=`Areas ranked by median ${unit}`;c3.append(h3);
+  const hint3=CE("div","hint");hint3.textContent="Top 18 by activity in the selected period — click an area to drill in";c3.append(hint3);
+  const byArea={};
+  rows.forEach(r=>{const a=byArea[r[1]]=byArea[r[1]]||[];a.push(r);});
+  const ranked=Object.entries(byArea).map(([ai,rr])=>({ai:+ai,n:rr.reduce((s,r)=>s+r[NI(m)],0),med:wMed(rr,PI(m),NI(m))}))
+      .filter(x=>x.med!=null).sort((a,b)=>b.n-a.n).slice(0,18).sort((a,b)=>b.med-a.med);
+  const maxMed=Math.max(...ranked.map(x=>x.med),1);
+  ranked.forEach(x=>{
+    const row=CE("div","bar-row");
+    const nm=CE("div","nm");nm.textContent=D.areas[x.ai];
+    const tr=CE("div","tr");tr.style.width=(x.med/maxMed*100)+"%";
+    const vl=CE("div","vl");const b=CE("b");b.textContent=Math.round(x.med).toLocaleString();
+    vl.append(b,document.createTextNode(` · ${fmt(x.n)} tx`));
+    row.append(nm,tr,vl);
+    row.onclick=()=>{S.areas=new Set([x.ai]);S.drillProj=null;render();};
+    row.addEventListener("pointermove",e=>showTip(e.clientX,e.clientY,tipNode(D.areas[x.ai],[[css("--s1"),"Median "+unit,Math.round(x.med).toLocaleString()],[null,(m==="sales"?"Transactions":"Contracts"),fmt(x.n)]])));
+    row.addEventListener("pointerleave",hideTip);
+    c3.append(row);
+  });
+  if(!ranked.length)c3.append(Object.assign(CE("div","empty"),{textContent:"No data for this selection"}));
+  g2.append(c3);
+
+  const c4=CE("div","card");
+  const segBy=S.tab==="resi"&&m==="sales"?"beds":"cat";
+  const h4=CE("h3");h4.textContent=segBy==="beds"?"By bedroom count":"By asset type";c4.append(h4);
+  const hint4=CE("div","hint");hint4.textContent=`Volume and median ${unit} in the selected period`;c4.append(hint4);
+  const segGroups={};
+  rows.forEach(r=>{
+    let key;
+    if(segBy==="beds"){const b=r[4];key=b===0?"Studio":b>=5?"5BR+":b>0?b+"BR":"n/a";}
+    else key=D.cats[r[2]];
+    (segGroups[key]=segGroups[key]||[]).push(r);
+  });
+  const segs=Object.entries(segGroups).map(([k2,rr])=>({k:k2,n:rr.reduce((s,r)=>s+r[NI(m)],0),med:wMed(rr,PI(m),NI(m))}))
+      .sort((a,b)=>b.n-a.n);
+  const maxN=Math.max(...segs.map(x=>x.n),1);
+  segs.forEach(x=>{
+    const row=CE("div","bar-row");row.style.cursor="default";
+    const nm=CE("div","nm");nm.textContent=x.k;
+    const tr=CE("div","tr");tr.style.width=(x.n/maxN*100)+"%";tr.style.background=css("--s5")||"#1baf7a";
+    const vl=CE("div","vl");const b=CE("b");b.textContent=fmt(x.n);
+    vl.append(b,document.createTextNode(x.med!=null?` tx · ${Math.round(x.med).toLocaleString()} ${m==="sales"?"/sqft":"/sqft/yr"}`:" tx"));
+    row.append(nm,tr,vl);c4.append(row);
+  });
+  if(!segs.length)c4.append(Object.assign(CE("div","empty"),{textContent:"No data for this selection"}));
+  g2.append(c4);
+  app.append(g2);
+
+  /* project drill (when area selected) */
+  const tx=txRows();
+  if(S.areas.size&&S.drillProj==null){
+    const cp=CE("div","card");
+    const hp=CE("h3");hp.textContent="Projects in selected area";cp.append(hp);
+    const hintp=CE("div","hint");hintp.textContent=`From detailed records of the last ${m==="sales"?D.microSalesDays:D.microRentsDays} days — click a project to isolate it`;cp.append(hintp);
+    const pgi=m==="sales"?7:6, price=m==="sales"?5:4;
+    const byProj={};
+    tx.forEach(r=>{(byProj[r[pgi]]=byProj[r[pgi]]||[]).push(r);});
+    const list=Object.entries(byProj).map(([pi,rr])=>{
+      const psfs=rr.map(r=>{const sf=r[m==="sales"?6:5]*SQMF;return sf>8?r[price]/sf:null;}).filter(Boolean).sort((a,b)=>a-b);
+      return {pi:+pi,n:rr.length,medP:median(rr.map(r=>r[price])),psf:psfs.length?psfs[Math.floor(psfs.length/2)]:null};
+    }).sort((a,b)=>b.n-a.n).slice(0,25);
+    const tb=CE("table"),th=CE("tr");
+    ["Project","Records","Median "+(m==="sales"?"price":"annual rent"),"Median "+unit].forEach((h,i)=>{const el2=CE("th");el2.textContent=h;if(i)el2.className="num";th.append(el2);});
+    tb.append(th);
+    list.forEach(x=>{
+      const trr=CE("tr","clickable");
+      [(x.pi>=0?D.projects[x.pi]:"(no project)"),fmt(x.n),fmtF(x.medP),x.psf?Math.round(x.psf).toLocaleString():"–"].forEach((v,i)=>{const td=CE("td");td.textContent=v;if(i)td.className="num";trr.append(td);});
+      trr.onclick=()=>{S.drillProj=x.pi;render();};
+      tb.append(trr);
+    });
+    const w=CE("div","tblwrap");w.append(tb);cp.append(w);app.append(cp);
+  }
+
+  /* transactions table */
+  const ct=CE("div","card");
+  const ht=CE("h3");ht.textContent=m==="sales"?"Individual transactions":"Individual rent contracts";ct.append(ht);
+  const hintt=CE("div","hint");
+  hintt.textContent=`Detailed records held for the last ${m==="sales"?D.microSalesDays:D.microRentsDays} days (aggregates above cover the full history) — ${fmt(tx.length)} match filters`;
+  ct.append(hintt);
+  const tbar=CE("div","toolbar");
+  const q=CE("input");q.type="search";q.placeholder="Filter table (area / project)…";
+  const exp=CE("button","iconbtn");exp.textContent="⬇ Export CSV";
+  const cnt=CE("span","count-note");
+  tbar.append(q,CE("span","sp"),cnt,exp);ct.append(tbar);
+  const wrap=CE("div","tblwrap");ct.append(wrap);
+  let sortCol=0,sortDir=-1;
+  function txCols(){
+    return m==="sales"
+      ?[["Date",r=>r[0]],["Area",r=>D.areas[r[1]]],["Project",r=>r[7]>=0?D.projects[r[7]]:""],["Type",r=>D.cats[r[2]]],["Beds",r=>r[4]===0?"Studio":r[4]>0?r[4]+"BR":""],["Reg",r=>r[3]?"Off-plan":"Ready"],["Size sqft",r=>r[6]?Math.round(r[6]*SQMF):null],["Price AED",r=>r[5]],["AED/sqft",r=>r[6]>0.8?Math.round(r[5]/(r[6]*SQMF)):null]]
+      :[["Registered",r=>r[0]],["Area",r=>D.areas[r[1]]],["Project",r=>r[6]>=0?D.projects[r[6]]:""],["Type",r=>D.cats[r[2]]],["Contract",r=>r[3]?"Renewed":"New"],["Start",r=>r[7]],["Size sqft",r=>r[5]?Math.round(r[5]*SQMF):null],["Annual AED",r=>r[4]],["AED/sqft/yr",r=>r[5]>0.8?Math.round(r[4]/(r[5]*SQMF)):null]];
+  }
+  function drawTable(){
+    const cols=txCols(),f=q.value.toLowerCase();
+    let rows2=tx;
+    if(f)rows2=rows2.filter(r=>{
+      const a=D.areas[r[1]]||"",p=(m==="sales"?(r[7]>=0?D.projects[r[7]]:""):(r[6]>=0?D.projects[r[6]]:""))||"";
+      return a.toLowerCase().includes(f)||p.toLowerCase().includes(f);});
+    const get=cols[sortCol][1];
+    rows2=[...rows2].sort((a,b)=>{const va=get(a),vb=get(b);
+      return (va==null?-1:vb==null?1:va<vb?-1:va>vb?1:0)*sortDir;});
+    cnt.textContent=rows2.length>500?`showing 500 of ${fmt(rows2.length)} (export for all)`:"";
+    wrap.innerHTML="";
+    const tb=CE("table"),thr=CE("tr");
+    cols.forEach(([h],i)=>{const th=CE("th");th.textContent=h+(i===sortCol?(sortDir<0?" ↓":" ↑"):"");
+      if(i>=6)th.className="num";
+      th.onclick=()=>{if(sortCol===i)sortDir*=-1;else{sortCol=i;sortDir=-1;}drawTable();};thr.append(th);});
+    tb.append(thr);
+    rows2.slice(0,500).forEach(r=>{
+      const trr=CE("tr");
+      cols.forEach(([_,gv],i)=>{const td=CE("td");const v=gv(r);
+        td.textContent=v==null?"–":(i>=6?fmtF(v):v);if(i>=6)td.className="num";trr.append(td);});
+      tb.append(trr);
+    });
+    wrap.append(tb);
+    exp.onclick=()=>{
+      const cols2=txCols();
+      const esc=s=>{s=s==null?"":String(s);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+      const csv=[cols2.map(c=>esc(c[0])).join(",")]
+        .concat(rows2.map(r=>cols2.map(c=>esc(c[1](r))).join(","))).join("\n");
+      const bl=new Blob(["﻿"+csv],{type:"text/csv"});
+      const a=CE("a");a.href=URL.createObjectURL(bl);
+      a.download=`dld_${m}_${new Date().toISOString().slice(0,10)}.csv`;a.click();
+      setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+    };
+  }
+  q.oninput=drawTable;drawTable();
+  app.append(ct);
+}
+function median(arr){const a=arr.filter(v=>v!=null).sort((x,y)=>x-y);return a.length?a[Math.floor(a.length/2)]:null;}
+
+/* ---------- header controls ---------- */
+$("#modeSeg").querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  S.mode=b.dataset.m;S.reg=-1;S.drillProj=null;
+  $("#modeSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));render();
+});
+$("#tabSeg").querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  S.tab=b.dataset.t;S.cats.clear();S.beds=-2;S.drillProj=null;
+  $("#tabSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));render();
+});
+addEventListener("resize",()=>{clearTimeout(window.__rz);window.__rz=setTimeout(render,180);});
+
+/* ---------- boot ---------- */
+loadPayload().then(d=>{
+  D=d;S=defState();
+  $("#updated").textContent=`Source: Dubai Land Department open data · last updated ${d.updated} · all values AED`;
+  $("#foot").innerHTML="";
+  const f=$("#foot");
+  f.append(Object.assign(CE("div"),{textContent:
+    `Data: Dubai Land Department open transaction & Ejari registers (dubailand.gov.ae). Sales history from Jan 2026 (earliest the DLD open API serves); it accumulates daily from here. `+
+    `Trend medians are volume-weighted across the filtered segments. Sizes converted at 1 sqm = 10.764 sqft. `+
+    `Detailed row-level records are held for the recent window noted above each table; use Export CSV for the full filtered set.`}));
+  render();
+}).catch(e=>{$("#loading").textContent="Failed to load data payload: "+e.message;});
+</script>
+</body>
+</html>
