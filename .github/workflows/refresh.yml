@@ -11,7 +11,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,6 +28,7 @@ jobs:
         run: |
           git config user.name "dld-bot"
           git config user.email "actions@users.noreply.github.com"
+          git pull --rebase origin main
           git add data docs
           git diff --cached --quiet || git commit -m "Daily DLD refresh $(date -u +%F)"
           git push
