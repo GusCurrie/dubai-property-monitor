@@ -78,6 +78,7 @@ tr.clickable{cursor:pointer}
 tr.clickable:hover td{background:color-mix(in srgb,var(--accent) 6%,transparent)}
 .tblwrap{overflow-x:auto;max-height:520px;overflow-y:auto}
 .bar-row{display:grid;grid-template-columns:170px 1fr 118px;gap:8px;align-items:center;padding:3px 0;cursor:pointer;border-radius:6px}
+.bar-row.wide{grid-template-columns:170px 1fr 210px}
 .bar-row:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
 .bar-row .nm{font-size:12.5px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
 .bar-row .tr{height:15px;border-radius:0 4px 4px 0;background:var(--s1);min-width:2px}
@@ -104,7 +105,7 @@ footer a{color:var(--accent)}
 <header>
   <h1>Dubai Real Estate Monitor</h1>
   <div class="seg" id="modeSeg">
-    <button data-m="sales" class="on">Sales</button><button data-m="rent">Rent</button>
+    <button data-m="sales" class="on">Sales</button><button data-m="rent">Rent</button><button data-m="yield">Yields</button>
   </div>
   <div class="seg" id="tabSeg">
     <button data-t="resi" class="on">Residential</button><button data-t="comm">Commercial</button>
@@ -171,7 +172,7 @@ function catIdxSet(){
 }
 function ymList(){
   const set=new Set();
-  (S.mode==="sales"?D.salesAgg:D.rentsAgg).forEach(r=>set.add(r[0]));
+  (S.mode==="rent"?D.rentsAgg:D.salesAgg).forEach(r=>set.add(r[0]));
   const all=[...set].sort();
   return S.period>=999?all:all.slice(-S.period);
 }
@@ -273,7 +274,7 @@ function lineChart(el,xs,series,fmtY){
   el.innerHTML="";
   const W=el.clientWidth||600,H=250,L=52,R=26,T=12,B=26;
   const svg=sv("svg",{viewBox:`0 0 ${W} ${H}`,height:H});
-  const vals=series.flatMap(s=>s.pts.map(p=>p.y).filter(v=>v!=null));
+  const vals=series.flatMap(s=>s.pts.flatMap(p=>[p.y,p.b25,p.b75]).filter(v=>v!=null));
   if(!vals.length||xs.length<2){el.append(Object.assign(CE("div","empty"),{textContent:"Not enough data for this selection"}));return;}
   let lo=Math.min(...vals),hi=Math.max(...vals);if(lo===hi){lo*=0.9;hi*=1.1;}
   const pad=(hi-lo)*0.08;lo-=pad;hi+=pad;
@@ -287,6 +288,21 @@ function lineChart(el,xs,series,fmtY){
   const step=Math.ceil(xs.length/8);
   xs.forEach((x,i)=>{if(i%step===0||i===xs.length-1){const t=sv("text",{x:X(i),y:H-8,"text-anchor":"middle"});t.textContent=x.slice(2);svg.append(t);}});
   series.forEach(s=>{
+    /* interquartile band (if pts carry b25/b75) */
+    let seg=[];
+    const flush=()=>{
+      if(seg.length>1){
+        let d2="";
+        seg.forEach(([i,b],j)=>{d2+=(j?"L":"M")+X(i)+","+Y(b);});
+        for(let j=seg.length-1;j>=0;j--){d2+="L"+X(seg[j][0])+","+Y(seg[j][2]);}
+        svg.append(sv("path",{d:d2+"Z",fill:s.color,opacity:"0.10",stroke:"none"}));
+      }
+      seg=[];
+    };
+    s.pts.forEach((p,i)=>{
+      if(p&&p.b25!=null&&p.b75!=null)seg.push([i,p.b25,p.b75]);else flush();
+    });
+    flush();
     let dstr="",started=false;
     s.pts.forEach((p,i)=>{if(p.y==null){started=false;return;}dstr+=(started?"L":"M")+X(i)+","+Y(p.y);started=true;});
     if(dstr)svg.append(sv("path",{d:dstr,fill:"none",stroke:s.color,"stroke-width":2,"stroke-linejoin":"round"}));
@@ -357,6 +373,13 @@ function chips(el,items,sel,fn){
 function renderFilters(){
   segBtns($("#periodSeg"),PERIODS.map(p=>[p[1],p[0]]),S.period,v=>S.period=v);
   chips($("#catChips"),catList(),S.cats,()=>{});
+  if(S.mode==="yield"){
+    $("#bedChips").style.display="none";$("#regSeg").style.display="none";
+    const btn=$("#areaBtn");
+    btn.textContent=(S.areas.size?[...S.areas].slice(0,2).map(i=>D.areas[i]).join(", ")+(S.areas.size>2?` +${S.areas.size-2}`:""):"All areas")+" ▾";
+    return;
+  }
+  $("#regSeg").style.display="";
   if(S.mode==="sales"&&S.tab==="resi"){
     $("#bedChips").style.display="";
     segBtns($("#bedChips"),BEDS,S.beds,v=>S.beds=v);
@@ -400,8 +423,114 @@ function crumb(){
     const s=CE("span");s.textContent=D.projects[S.drillProj]||"(unnamed project)";el.append(s);}
 }
 
+function barListCard(title,hint,items,valueFmt,onClick){
+  const c=CE("div","card");
+  const h=CE("h3");h.textContent=title;c.append(h);
+  const hn=CE("div","hint");hn.textContent=hint;c.append(hn);
+  const maxV=Math.max(...items.map(x=>Math.abs(x.val)),1e-9);
+  items.forEach(x=>{
+    const row=CE("div","bar-row wide");if(!onClick)row.style.cursor="default";
+    const nm=CE("div","nm");nm.textContent=x.name;
+    const tr=CE("div","tr");tr.style.width=(Math.abs(x.val)/maxV*100)+"%";
+    if(x.val<0)tr.style.background="var(--down)";
+    const vl=CE("div","vl");const b=CE("b");b.textContent=valueFmt(x.val);
+    vl.append(b,document.createTextNode(x.extra||""));
+    row.append(nm,tr,vl);
+    if(onClick)row.onclick=()=>onClick(x);
+    if(x.tip)row.addEventListener("pointermove",e=>showTip(e.clientX,e.clientY,tipNode(x.name,x.tip)));
+    row.addEventListener("pointerleave",hideTip);
+    c.append(row);
+  });
+  if(!items.length)c.append(Object.assign(CE("div","empty"),{textContent:"Not enough data for this selection (minimum sample thresholds apply)"}));
+  return c;
+}
+function renderYields(){
+  const app=$("#app");app.innerHTML="";
+  const cs=catIdxSet(),yms=ymList(),ymSet=new Set(yms);
+  const inScope=r=>ymSet.has(r[0])&&cs.has(r[2])&&(!S.areas.size||S.areas.has(r[1]));
+  const sReady=D.salesAgg.filter(r=>inScope(r)&&r[3]===0);
+  const rNew=D.rentsAgg.filter(r=>inScope(r)&&r[3]===0);
+  const rRen=D.rentsAgg.filter(r=>inScope(r)&&r[3]===1);
+  const ops=(D.opAgg||[]).filter(inScope);
+  const NMIN=20;
+  const salePsf=wMed(sReady,7,5),rentPsf=wMed(rNew,6,4),renPsf=wMed(rRen,6,4);
+  const cityYield=(salePsf&&rentPsf)?rentPsf/salePsf*100:null;
+  const rev=(rentPsf&&renPsf)?(rentPsf/renPsf-1)*100:null;
+  const launch=wMed(ops.filter(r=>r[3]===0),5,4),resale=wMed(ops.filter(r=>r[3]===1),5,4);
+  const prem=(launch&&resale)?(resale/launch-1)*100:null;
+  const nS=sReady.reduce((s,r)=>s+r[5],0),nR=rNew.reduce((s,r)=>s+r[4],0);
+  /* KPIs */
+  const kw=CE("div");kw.id="kpis";
+  [["Gross yield (psf basis)",cityYield!=null?cityYield.toFixed(1)+"%":"—"],
+   ["Reversion: new vs renewed",rev!=null?(rev>=0?"+":"")+rev.toFixed(1)+"%":"—"],
+   ["Off-plan resale vs launch",prem!=null?(prem>=0?"+":"")+prem.toFixed(1)+"%":"—"],
+   ["Ready sales in window",fmt(nS)],
+   ["New leases in window",fmt(nR)]].forEach(([lb,v])=>{
+    const t=CE("div","kpi");const l=CE("div","lb");l.textContent=lb;
+    const vv=CE("div","v");vv.textContent=v;t.append(l,vv);kw.append(t);
+  });
+  app.append(kw);
+  /* within-class computation, volume-weighted across classes — avoids apartment/villa mix artifacts */
+  const byAreaCat=src=>{const o={};src.forEach(r=>{const k=r[1]+"_"+r[2];(o[k]=o[k]||[]).push(r);});return o;};
+  const aS=byAreaCat(sReady),aN=byAreaCat(rNew),aR=byAreaCat(rRen);
+  const yAcc={},rAcc={};
+  Object.keys(aN).forEach(k=>{
+    const ai=+k.split("_")[0];
+    const ns=(aS[k]||[]).reduce((s,r)=>s+r[5],0),nr=aN[k].reduce((s,r)=>s+r[4],0);
+    if(ns>=NMIN&&nr>=NMIN){
+      const sp=wMed(aS[k],7,5),rp=wMed(aN[k],6,4);
+      if(sp&&rp){const a=yAcc[ai]=yAcc[ai]||{w:0,y:0,ns:0,nr:0,rp:0,sp:0};
+        const w=Math.min(ns,nr);a.w+=w;a.y+=rp/sp*100*w;a.ns+=ns;a.nr+=nr;a.rp+=rp*w;a.sp+=sp*w;}
+    }
+    const nren=(aR[k]||[]).reduce((s,r)=>s+r[4],0);
+    if(nr>=NMIN&&nren>=NMIN){
+      const np=wMed(aN[k],6,4),pp=wMed(aR[k],6,4);
+      if(np&&pp){const a=rAcc[ai]=rAcc[ai]||{w:0,v:0,np:0,pp:0};
+        const w=Math.min(nr,nren);a.w+=w;a.v+=(np/pp-1)*100*w;a.np+=np*w;a.pp+=pp*w;}
+    }
+  });
+  const yieldItems=Object.entries(yAcc).map(([ai,a])=>({name:D.areas[ai],ai:+ai,val:a.y/a.w,
+    extra:` · ${fmt(a.nr)} leases`,tip:[[css("--s1"),"Rent AED/sqft/yr",Math.round(a.rp/a.w)],[css("--s2"),"Price AED/sqft",Math.round(a.sp/a.w)],[null,"Ready sales / new leases",`${fmt(a.ns)} / ${fmt(a.nr)}`]]}));
+  const revItems=Object.entries(rAcc).map(([ai,a])=>({name:D.areas[ai],val:a.v/a.w,
+    extra:` · new ${Math.round(a.np/a.w)} vs ren ${Math.round(a.pp/a.w)}`}));
+  yieldItems.sort((a,b)=>b.val-a.val);revItems.sort((a,b)=>b.val-a.val);
+  const g=CE("div","grid2");
+  g.append(barListCard("Gross yield by area",`Median new-lease AED/sqft/yr ÷ median ready-sale AED/sqft over the selected period — min ${NMIN} of each. Click to drill`,
+    yieldItems.slice(0,18),v=>v.toFixed(1)+"%",x=>{S.areas=new Set([x.ai]);render();}));
+  g.append(barListCard("Reversion by area: new-lease premium over renewals",
+    "How far market (new) rents sit above in-place (renewed) rents — the uplift a reviewed unit reverts to",
+    revItems.slice(0,18),v=>(v>=0?"+":"")+v.toFixed(1)+"%"));
+  app.append(g);
+  /* trends */
+  const g2=CE("div","grid2");
+  const c3=CE("div","card");const h3=CE("h3");h3.textContent="Gross yield trend";c3.append(h3);
+  const hn3=CE("div","hint");hn3.textContent="Monthly: new-lease rent psf ÷ ready-sale price psf (city-level for current filters)";c3.append(hn3);
+  const ch3=CE("div");c3.append(ch3);g2.append(c3);
+  const c4=CE("div","card");const h4=CE("h3");h4.textContent="Off-plan: launch vs resale AED/sqft";c4.append(h4);
+  const hn4=CE("div","hint");hn4.textContent="Developer launches (Sell – Pre registration) vs off-plan resales, monthly medians";c4.append(hn4);
+  const lg=CE("div","legend");
+  [["Launch",css("--s1")],["Resale",css("--s2")]].forEach(([n,col])=>{const s=CE("span");const i=CE("i");i.style.background=col;s.append(i,document.createTextNode(n));lg.append(s);});
+  c4.append(lg);
+  const ch4=CE("div");c4.append(ch4);g2.append(c4);
+  app.append(g2);
+  requestAnimationFrame(()=>{
+    lineChart(ch3,yms,[{name:"Gross yield",color:css("--s1"),pts:yms.map(x=>{
+      const sp=wMed(sReady.filter(r=>r[0]===x),7,5),rp=wMed(rNew.filter(r=>r[0]===x),6,4);
+      return {y:(sp&&rp)?rp/sp*100:null,n:rNew.filter(r=>r[0]===x).reduce((s,r)=>s+r[4],0)};})}],v=>v.toFixed(1)+"%");
+    lineChart(ch4,yms,[
+      {name:"Launch",color:css("--s1"),pts:yms.map(x=>{const rr=ops.filter(r=>r[0]===x&&r[3]===0);
+        return {y:wMed(rr,5,4),n:rr.reduce((s,r)=>s+r[4],0)};})},
+      {name:"Resale",color:css("--s2"),pts:yms.map(x=>{const rr=ops.filter(r=>r[0]===x&&r[3]===1);
+        return {y:wMed(rr,5,4),n:rr.reduce((s,r)=>s+r[4],0)};})}],v=>Math.round(v).toLocaleString());
+  });
+  const note=CE("div","card");
+  const nt=CE("div","hint");nt.style.marginBottom="0";
+  nt.textContent="Yields are gross (before service charges, management, voids). Psf-basis estimator controls for unit-size mix. Pre-2026 rental history is residential and grouped by submarket, so yield coverage for commercial areas begins Jan 2026. Villa yields compare plot-basis sale rates with built-area rents — treat as indicative only.";
+  note.append(nt);app.append(note);
+}
 function render(){
   renderFilters();crumb();
+  if(S.mode==="yield"){renderYields();return;}
   const app=$("#app");app.innerHTML="";
   const m=S.mode,rows=aggRows(),yms=ymList();
   const k=kpis(rows);
@@ -432,7 +561,7 @@ function render(){
   const g=CE("div","grid2");
   const c1=CE("div","card");
   const h1=CE("h3");h1.textContent=`Median ${unit} trend`;c1.append(h1);
-  const hint1=CE("div","hint");hint1.textContent=m==="sales"?"Ready vs off-plan, monthly":"New vs renewed contracts, monthly";c1.append(hint1);
+  const hint1=CE("div","hint");hint1.textContent=(m==="sales"?"Ready vs off-plan, monthly":"New vs renewed contracts, monthly")+" — shaded: P25–P75 band";c1.append(hint1);
   const lgd=CE("div","legend");
   const names=m==="sales"?["Ready","Off-plan"]:["New","Renewed"];
   const cols=[css("--s1")||"#2a78d6",css("--s2")||"#008300"];
@@ -448,8 +577,10 @@ function render(){
   app.append(g);
 
   const bySplit=i=>rows.filter(r=>r[3]===i);
+  const B25=m==="sales"?9:7,B75=m==="sales"?10:8;
   const mkPts=set=>yms.map(x=>{const rr=set.filter(r=>r[0]===x);
-    return {y:wMed(rr,PI(m),NI(m)),n:rr.reduce((s,r)=>s+r[NI(m)],0)};});
+    return {y:wMed(rr,PI(m),NI(m)),n:rr.reduce((s,r)=>s+r[NI(m)],0),
+            b25:wMed(rr,B25,NI(m)),b75:wMed(rr,B75,NI(m))};});
   const psfFmt=v=>Math.round(v).toLocaleString();
   requestAnimationFrame(()=>{
     lineChart(ch1,yms,[{name:names[0],color:cols[0],pts:mkPts(bySplit(0))},{name:names[1],color:cols[1],pts:mkPts(bySplit(1))}],psfFmt);

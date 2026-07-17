@@ -69,6 +69,12 @@ def beds_code(rooms):
 def med(vals):
     return round(statistics.median(vals), 1) if vals else None
 
+def q(vals, p):
+    if not vals: return None
+    vs = sorted(vals); k = (len(vs) - 1) * p
+    f = int(k); c = min(f + 1, len(vs) - 1)
+    return round(vs[f] + (vs[c] - vs[f]) * (k - f), 1)
+
 def load(kind):
     for fp in sorted(glob.glob(os.path.join(DATA, f"{kind}_*.jsonl.gz"))):
         with gzip.open(fp, "rt") as f:
@@ -98,7 +104,7 @@ def main():
     micro_rents_from = today - timedelta(days=MICRO_RENTS_DAYS)
 
     # ---- sales ----
-    s_groups, s_micro = {}, []
+    s_groups, s_micro, op_groups = {}, [], {}
     for r in sales:
         n_sales += 1
         try:
@@ -119,12 +125,20 @@ def main():
         g = s_groups.setdefault(key, {"n": 0, "v": [], "p": [], "tot": 0})
         g["n"] += 1; g["v"].append(val); g["tot"] += val
         if ppsf and 40 < ppsf < 40000: g["p"].append(ppsf)
+        if off == 1:
+            kind = 0 if "Pre registration" in (r.get("PROCEDURE_EN") or "") else 1
+            og = op_groups.setdefault((ym, ai, ci, kind), {"n": 0, "p": []})
+            og["n"] += 1
+            if ppsf and 40 < ppsf < 40000: og["p"].append(ppsf)
         if d.date() >= micro_sales_from:
             s_micro.append([d.strftime("%Y-%m-%d"), ai, ci, off, bd, round(val),
                             round(area_sqm, 1), pidx(r.get("PROJECT_EN") or r.get("MASTER_PROJECT_EN")),
                             1 if r.get("IS_FREE_HOLD") else 0])
     sales_agg = [[k[0], k[1], k[2], k[3], k[4], g["n"], med(g["v"]), med(g["p"]),
-                  round(g["tot"] / 1e6, 2)] for k, g in sorted(s_groups.items())]
+                  round(g["tot"] / 1e6, 2), q(g["p"], 0.25), q(g["p"], 0.75)]
+                 for k, g in sorted(s_groups.items())]
+    op_agg = [[k[0], k[1], k[2], k[3], g["n"], med(g["p"])]
+              for k, g in sorted(op_groups.items()) if g["p"]]
 
     # ---- rents ----
     r_groups, r_micro = {}, []
@@ -151,8 +165,8 @@ def main():
             r_micro.append([d.strftime("%Y-%m-%d"), ai, ci, ver, round(ann),
                             round(area_sqm, 1), pidx(r.get("PROJECT_EN") or r.get("MASTER_PROJECT_EN")),
                             (r.get("START_DATE") or "")[:10]])
-    rents_agg = [[k[0], k[1], k[2], k[3], g["n"], med(g["v"]), med(g["p"])]
-                 for k, g in sorted(r_groups.items())]
+    rents_agg = [[k[0], k[1], k[2], k[3], g["n"], med(g["v"]), med(g["p"]),
+                  q(g["p"], 0.25), q(g["p"], 0.75)] for k, g in sorted(r_groups.items())]
 
     # ---- pre-2026 history from cleaned research dataset (optional) ----
     hist_p = os.path.join(DATA, "history_agg.b64")
@@ -162,14 +176,19 @@ def main():
         hs = hr = 0
         for row in hist.get("salesAgg", []):
             if row[0] < live_from:
-                sales_agg.append([row[0], aidx(row[1]), row[2], row[3], row[4],
-                                  row[5], row[6], row[7], row[8]])
+                sales_agg.append([row[0], aidx(row[1])] + row[2:9] +
+                                 [row[9] if len(row) > 9 else None, row[10] if len(row) > 10 else None])
                 hs += 1
         live_rents_from = min((r[0] for r in rents_agg), default="2026-01")
         for row in hist.get("rentsAgg", []):
             if row[0] < live_rents_from:
-                rents_agg.append([row[0], aidx(row[1]), row[2], row[3], row[4], row[5], row[6]])
+                rents_agg.append([row[0], aidx(row[1])] + row[2:7] +
+                                 [row[7] if len(row) > 7 else None, row[8] if len(row) > 8 else None])
                 hr += 1
+        for row in hist.get("opAgg", []):
+            if row[0] < live_from:
+                op_agg.append([row[0], aidx(row[1]), row[2], row[3], row[4], row[5]])
+        op_agg.sort(key=lambda r: r[0])
         sales_agg.sort(key=lambda r: r[0]); rents_agg.sort(key=lambda r: r[0])
         print(f"history merged: sales {hs} rows, rents {hr} rows (months before {live_from})")
 
@@ -182,6 +201,7 @@ def main():
         "projects": proj_list,
         "salesAgg": sales_agg,
         "rentsAgg": rents_agg,
+        "opAgg": op_agg,
         "salesTx": s_micro,
         "rentsTx": r_micro,
         "microSalesDays": MICRO_SALES_DAYS,
