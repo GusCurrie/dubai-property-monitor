@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Daily incremental pull from the DLD open-data API (gateway.dubailand.gov.ae).
-Re-pulls the current month and, in the first 5 days of a month, the previous
-month too, replacing those monthly files in data/. Run from repo root by CI."""
+"""Pull DLD open-data (gateway.dubailand.gov.ae) into data/*.jsonl.gz.
+
+Each run refreshes the current month (and the previous month during the first
+5 days of a new month), and backfills any month missing since HISTORY_START.
+Rents are pulled in overlapping intra-month windows to avoid deep-pagination
+drift on the API side; rows are de-duplicated by full-row hash."""
 import requests, json, gzip, os, time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
@@ -12,6 +15,7 @@ HDR = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Content-Type"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data")
 PAGE = 2000
+HISTORY_START = (2026, 1)   # earliest month the DLD open API serves
 
 S_FIELDS = ["TRANSACTION_NUMBER","INSTANCE_DATE","PROCEDURE_EN","IS_OFFPLAN","IS_FREE_HOLD","AREA_EN",
             "TRANS_VALUE","ACTUAL_AREA","PROCEDURE_AREA","USAGE_EN","PROP_TYPE_EN","PROP_SB_TYPE_EN",
@@ -44,16 +48,25 @@ def pull_month(kind, y, m):
     cmd = "transactions" if kind == "sales" else "rents"
     fields = S_FIELDS if kind == "sales" else R_FIELDS
     last = (date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1))
-    f_s, t_s = f"{m:02d}/01/{y}", f"{last.month:02d}/{last.day:02d}/{last.year}"
-    probe = post(cmd, base_payload(kind, f_s, t_s))
-    total = probe[0]["TOTAL"] if probe else 0
-    def get_page(sk):
-        p = dict(base_payload(kind, f_s, t_s)); p["P_TAKE"] = str(PAGE); p["P_SKIP"] = str(sk)
-        return post(cmd, p)
-    rows = []
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        for res in ex.map(get_page, range(0, total, PAGE)):
-            rows.extend(res)
+    if kind == "rents":
+        bounds = [1, 7, 13, 19, 25]
+        wins = [(f"{m:02d}/{b:02d}/{y}",
+                 f"{m:02d}/{bounds[i+1]:02d}/{y}" if i + 1 < len(bounds)
+                 else f"{last.month:02d}/{last.day:02d}/{last.year}")
+                for i, b in enumerate(bounds)]
+    else:
+        wins = [(f"{m:02d}/01/{y}", f"{last.month:02d}/{last.day:02d}/{last.year}")]
+    rows, total = [], 0
+    for (wf, wt) in wins:
+        probe = post(cmd, base_payload(kind, wf, wt))
+        wtotal = probe[0]["TOTAL"] if probe else 0
+        total += wtotal
+        def get_page(sk, wf=wf, wt=wt):
+            p = dict(base_payload(kind, wf, wt)); p["P_TAKE"] = str(PAGE); p["P_SKIP"] = str(sk)
+            return post(cmd, p)
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            for res in ex.map(get_page, range(0, wtotal, PAGE)):
+                rows.extend(res)
     seen, out = set(), []
     for r in rows:
         k = r["TRANSACTION_NUMBER"] if kind == "sales" else json.dumps([r.get(fl) for fl in fields], ensure_ascii=False)
@@ -63,18 +76,28 @@ def pull_month(kind, y, m):
     with gzip.open(os.path.join(DATA, f"{tag}.jsonl.gz"), "wt") as gf:
         for r in out:
             gf.write(json.dumps(r, ensure_ascii=False) + "\n")
-    print(f"{tag}: total={total} rows={len(out)}")
+    print(f"{tag}: total={total} rows={len(out)}", flush=True)
 
-def months_to_refresh():
+def month_range(start, end):
+    y, m = start
+    while (y, m) <= end:
+        yield (y, m)
+        m += 1
+        if m == 13: y, m = y + 1, 1
+
+def months_to_pull(kind):
     t = date.today()
-    ms = [(t.year, t.month)]
+    cur = (t.year, t.month)
+    need = {cur}
     if t.day <= 5:
-        py, pm = (t.year, t.month - 1) if t.month > 1 else (t.year - 1, 12)
-        ms.append((py, pm))
-    return ms
+        need.add((t.year, t.month - 1) if t.month > 1 else (t.year - 1, 12))
+    for (y, m) in month_range(HISTORY_START, cur):
+        if not os.path.exists(os.path.join(DATA, f"{kind}_{y}_{m:02d}.jsonl.gz")):
+            need.add((y, m))
+    return sorted(need)
 
 if __name__ == "__main__":
     os.makedirs(DATA, exist_ok=True)
     for kind in ("sales", "rents"):
-        for (y, m) in months_to_refresh():
+        for (y, m) in months_to_pull(kind):
             pull_month(kind, y, m)
