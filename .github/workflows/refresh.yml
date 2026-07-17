@@ -28,7 +28,7 @@ jobs:
         run: |
           git config user.name "dld-bot"
           git config user.email "actions@users.noreply.github.com"
-          git pull --rebase origin main
           git add data docs
           git diff --cached --quiet || git commit -m "Daily DLD refresh $(date -u +%F)"
+          git pull --rebase origin main
           git push
