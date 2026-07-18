@@ -192,6 +192,50 @@ def main():
         sales_agg.sort(key=lambda r: r[0]); rents_agg.sort(key=lambda r: r[0])
         print(f"history merged: sales {hs} rows, rents {hr} rows (months before {live_from})")
 
+    # ---- cycle instrument: quarterly ready-apartment series + live signals ----
+    cyc_payload = None
+    cyc_p = os.path.join(DATA, "cycle_history.json")
+    if os.path.exists(cyc_p):
+        apt = CAT_IDX["Apartment"]
+        def _wmed(rows2, vi, ni):
+            pairs = sorted((x[vi], x[ni]) for x in rows2 if x[vi])
+            tot = sum(n for _, n in pairs); acc = 0
+            for v, n in pairs:
+                acc += n
+                if acc >= tot / 2: return v
+            return None
+        qgroups = {}
+        for row in sales_agg:
+            if row[0] < "2026-01" or row[2] != apt or row[3] != 0 or not row[7]: continue
+            qq = row[0][:4] + "Q" + str((int(row[0][5:7]) - 1) // 3 + 1)
+            qgroups.setdefault(qq, []).append(row)
+        series = json.load(open(cyc_p))
+        for qq in sorted(qgroups):
+            v = _wmed(qgroups[qq], 7, 5)
+            if v: series.append([qq, round(v, 1)])
+        months_all = sorted({r[0] for r in sales_agg})
+        last12, prior12 = set(months_all[-12:]), set(months_all[-24:-12])
+        readyN = sum(r[5] for r in sales_agg if r[0] in last12 and r[3] == 0)
+        readyP = sum(r[5] for r in sales_agg if r[0] in prior12 and r[3] == 0)
+        offN = sum(r[5] for r in sales_agg if r[0] in last12 and r[3] == 1)
+        aptN = _wmed([r for r in sales_agg if r[0] in last12 and r[2] == apt and r[3] == 0], 7, 5)
+        aptP = _wmed([r for r in sales_agg if r[0] in prior12 and r[2] == apt and r[3] == 0], 7, 5)
+        rentN = _wmed([r for r in rents_agg if r[0] in last12 and r[2] == apt and r[3] == 0], 6, 4)
+        rentP = _wmed([r for r in rents_agg if r[0] in prior12 and r[2] == apt and r[3] == 0], 6, 4)
+        seam = any(m < "2026-01" for m in (prior12 | last12))
+        peakv = max(v for _, v in series)
+        curv = series[-1][1]
+        cyc_payload = {"series": series, "signals": {
+            "priceYoY": round((aptN / aptP - 1) * 100, 1) if aptN and aptP else None,
+            "readyVolYoY": round((readyN / readyP - 1) * 100, 1) if readyP else None,
+            "offplanShare": round(offN / (offN + readyN) * 100, 1) if (offN + readyN) else None,
+            "rentYoY": round((rentN / rentP - 1) * 100, 1) if (rentN and rentP and not seam) else None,
+            "vsPeak": round((curv / peakv - 1) * 100, 1),
+            "grossYield": round(rentN / aptN * 100, 1) if rentN and aptN else None,
+            "p2rNow": round(aptN / rentN, 1) if rentN and aptN else None,
+        }}
+        print(f"cycle: {len(series)} quarters, signals computed (rent seam: {seam})")
+
     area_list = [a for a, _ in sorted(areas.items(), key=lambda x: x[1])]
     proj_list = [p for p, _ in sorted(projects.items(), key=lambda x: x[1])]
     payload = {
@@ -202,6 +246,7 @@ def main():
         "salesAgg": sales_agg,
         "rentsAgg": rents_agg,
         "opAgg": op_agg,
+        "cycle": cyc_payload,
         "salesTx": s_micro,
         "rentsTx": r_micro,
         "microSalesDays": MICRO_SALES_DAYS,

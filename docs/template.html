@@ -105,7 +105,7 @@ footer a{color:var(--accent)}
 <header>
   <h1>Dubai Real Estate Monitor</h1>
   <div class="seg" id="modeSeg">
-    <button data-m="sales" class="on">Sales</button><button data-m="rent">Rent</button><button data-m="yield">Yields</button>
+    <button data-m="sales" class="on">Sales</button><button data-m="rent">Rent</button><button data-m="yield">Yields</button><button data-m="cycle">Cycle</button>
   </div>
   <div class="seg" id="tabSeg">
     <button data-t="resi" class="on">Residential</button><button data-t="comm">Commercial</button>
@@ -373,6 +373,11 @@ function chips(el,items,sel,fn){
 function renderFilters(){
   segBtns($("#periodSeg"),PERIODS.map(p=>[p[1],p[0]]),S.period,v=>S.period=v);
   chips($("#catChips"),catList(),S.cats,()=>{});
+  if(S.mode==="cycle"){
+    ["#periodSeg","#areaBox","#catChips","#bedChips","#regSeg"].forEach(sel=>$(sel).style.display="none");
+    return;
+  }
+  ["#periodSeg","#areaBox","#catChips"].forEach(sel=>$(sel).style.display="");
   if(S.mode==="yield"){
     $("#bedChips").style.display="none";$("#regSeg").style.display="none";
     const btn=$("#areaBtn");
@@ -564,8 +569,174 @@ function renderYields(){
   nt.textContent="Yields are gross (before service charges, management, voids). Psf-basis estimator controls for unit-size mix. Pre-2026 rental history is residential and grouped by submarket, so yield coverage for commercial areas begins Jan 2026. Villa yields compare plot-basis sale rates with built-area rents — treat as indicative only.";
   note.append(nt);app.append(note);
 }
+/* ================= CYCLE MODE ================= */
+const CYC_SCN={
+ "Steady - no shock":{c:"#898781",p:null},
+ "Slow slide - like the 2014-19 oil slump":{c:"#c98500",d:-0.222,tq:19,rq:18,rb:0.07},
+ "Sharp crash, quick recovery - like 2008":{c:"#e34948",d:-0.198,tq:2,rq:5,rb:0.26},
+ "Short dip, strong bounce - like COVID":{c:"#1baf7a",d:-0.081,tq:3,rq:5,rb:0.70},
+ "War shock - worst-case estimate":{c:"#4a3aa7",d:-0.198,tq:3,rq:6,rb:0.55}};
+const CYC_RESEARCH={rentYoY:-2.5,yieldLR:7.4,p2rLR:13.3};
+const CYC_PHASES=["Growing","Late boom","At the top","Falling","Levelling","Recovering"];
+const CYC_PCOLS=["#1baf7a","#a3c319","#eda100","#e34948","#898781","#2a78d6"];
+function scnPath(s){
+  const out=[];
+  for(let i=0;i<=20;i++){
+    let v;
+    if(s.p!==undefined&&s.p===null){v=1;}
+    else if(i<=s.tq)v=1+s.d*(i/s.tq);
+    else if(i<=s.tq+s.rq)v=(1+s.d)+(-s.d)*((i-s.tq)/s.rq);
+    else v=Math.pow(1+s.rb,((i-s.tq-s.rq)/4)/5);
+    out.push(v*100);
+  }
+  return out;
+}
+let cycOn=Object.fromEntries(Object.keys(CYC_SCN).map(k=>[k,true])),cycHover=-1;
+function renderCycle(){
+  const app=$("#app");app.innerHTML="";
+  const C=D.cycle;
+  if(!C||!C.series||C.series.length<8){app.append(Object.assign(CE("div","empty"),{textContent:"Cycle data not available in this build yet."}));return;}
+  const sg=C.signals,R2=CYC_RESEARCH;
+  const rentYoY=sg.rentYoY!=null?sg.rentYoY:R2.rentYoY;
+  const rentTag=sg.rentYoY!=null?"live register":"from research, Q2-26";
+  /* phase per documented rules */
+  const yoy=sg.priceYoY,atHigh=sg.vsPeak>-5;
+  let phase,pi;
+  if(yoy>5&&atHigh){phase="Late boom";pi=1.5;}
+  else if(yoy>=0&&yoy<=5&&atHigh){phase="At the top";pi=2.5;}
+  else if(yoy<-2){phase="Falling";pi=3.5;}
+  else if(yoy>=-2&&yoy<0){phase="Levelling off";pi=4.2;}
+  else {phase="Growing";pi=0.6;}
+  if((sg.readyVolYoY<-15||rentYoY<0)&&pi<3)pi+=0.35;
+  const phCol=CYC_PCOLS[Math.max(0,Math.min(5,Math.floor(pi)))];
+  /* layout */
+  const row=CE("div","grid2");
+  const c1=CE("div","card");
+  const h1=CE("h3");h1.textContent="Where we are";c1.append(h1);
+  const hd1=CE("div","hint");hd1.textContent="Where today's numbers place us in the property cycle (built apartments)";c1.append(hd1);
+  const dial=CE("canvas");dial.style.width="100%";c1.append(dial);
+  const vd=CE("div");vd.style.cssText="font-size:14px;line-height:1.55;margin-top:6px";
+  const bb=CE("b");bb.textContent=phase;bb.style.color=phCol;
+  vd.append(bb,document.createTextNode(` — prices are near their record high (${sg.vsPeak}% below the peak) and rose ${sg.priceYoY}% over the last year. But ${Math.abs(sg.readyVolYoY)}% fewer built homes changed hands than a year ago, and rents on new leases are ${rentYoY<0?"falling":"rising"} (${rentYoY}%). In past cycles, strong prices with weakening activity and rents showed up shortly before the top.`));
+  c1.append(vd);row.append(c1);
+  const c2=CE("div","card");
+  const h2c=CE("h3");h2c.textContent="What the signals say";c2.append(h2c);
+  const hd2=CE("div","hint");hd2.textContent="Last 12 months vs the year before, from the live registers.";c2.append(hd2);
+  const sigw=CE("div");sigw.id="kpis";sigw.style.marginBottom="0";
+  [["Prices (built homes)",(sg.priceYoY>=0?"+":"")+sg.priceYoY+"%","change over the last year",sg.priceYoY>=0?"#eda100":"#e34948"],
+   ["Number of sales (built homes)",sg.readyVolYoY+"%","activity usually turns before prices do",sg.readyVolYoY>-5?"#1baf7a":(sg.readyVolYoY>-15?"#eda100":"#e34948")],
+   ["Off-plan share of all sales",sg.offplanShare+"%","very high = lots of speculative buying",sg.offplanShare<55?"#1baf7a":(sg.offplanShare<65?"#eda100":"#e34948")],
+   ["Rents on new leases",rentYoY+"%","cooling demand shows here first ("+rentTag+")",rentYoY>2?"#1baf7a":(rentYoY>-1?"#eda100":"#e34948")],
+   ["Years of rent to buy",sg.p2rNow,"long-run average "+R2.p2rLR+" — higher = expensive",sg.p2rNow<13.8?"#1baf7a":(sg.p2rNow<14.8?"#eda100":"#e34948")],
+   ["Rental return if buying today",sg.grossYield+"%","typically "+R2.yieldLR+"% — low = late in the cycle",sg.grossYield>7?"#1baf7a":(sg.grossYield>6.6?"#eda100":"#e34948")]
+  ].forEach(([lb,v,m,col])=>{
+    const t=CE("div","kpi");const l=CE("div","lb");l.textContent=lb;
+    const vv=CE("div","v");vv.textContent=v;vv.style.color=col;
+    const mn=CE("div","d");mn.textContent=m;
+    t.append(l,vv,mn);sigw.append(t);
+  });
+  c2.append(sigw);row.append(c2);
+  app.append(row);
+  const c3=CE("div","card");
+  const h3c=CE("h3");h3c.textContent="The last 12 years — and five ways the next 5 could go";c3.append(h3c);
+  const hd3=CE("div","hint");hd3.textContent="Solid line: typical selling price of built apartments since 2014 (scaled so today = 100). Dashed lines: what would happen if a downturn like a past one started today — what-ifs, not predictions. Click a name to show or hide it.";c3.append(hd3);
+  const chipw=CE("div");chipw.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px";
+  Object.entries(CYC_SCN).forEach(([k,s])=>{
+    const ch=CE("span","chip"+(cycOn[k]?" on":""));
+    const dot=CE("i");dot.style.cssText=`display:inline-block;width:9px;height:9px;border-radius:50%;background:${s.c};margin-right:6px`;
+    ch.append(dot,document.createTextNode(k));
+    ch.onclick=()=>{cycOn[k]=!cycOn[k];render();};
+    chipw.append(ch);
+  });
+  c3.append(chipw);
+  const mainC=CE("canvas");mainC.style.width="100%";c3.append(mainC);
+  const note=CE("div","hint");note.style.marginTop="8px";
+  note.textContent="The what-if paths replay Dubai's three real past downturns (2008 crash, 2014-19 oil slump, COVID) as if each started today; the war-shock path combines a 2008-sized fall with a COVID-style rebound. Past behaviour is a guide, not a guarantee.";
+  c3.append(note);
+  app.append(c3);
+  requestAnimationFrame(()=>{drawCycDial(dial,pi,phCol);drawCycMain(mainC,C);});
+}
+function drawCycDial(cv,pi,phCol){
+  const W=cv.width=cv.clientWidth*2,H=cv.height=350;
+  const ctx=cv.getContext('2d');
+  const cx=W/2,cy=H*0.92,R=Math.min(W*0.33,H*0.68);
+  CYC_PHASES.forEach((p,i)=>{
+    const a0=Math.PI+(i/6)*Math.PI,a1=Math.PI+((i+1)/6)*Math.PI;
+    ctx.beginPath();ctx.arc(cx,cy,R,a0+0.014,a1-0.014);
+    ctx.strokeStyle=CYC_PCOLS[i];ctx.lineWidth=22;ctx.globalAlpha=0.85;ctx.stroke();ctx.globalAlpha=1;
+    const am=(a0+a1)/2;
+    ctx.fillStyle=css("--ink2");ctx.font="15px system-ui";ctx.textAlign="center";
+    ctx.fillText(p,cx+(R+38)*Math.cos(am),cy+(R+38)*Math.sin(am));
+  });
+  const aN=Math.PI+(pi/6)*Math.PI;
+  ctx.strokeStyle=css("--ink");ctx.lineWidth=5;ctx.shadowColor=phCol;ctx.shadowBlur=16;
+  ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+(R-26)*Math.cos(aN),cy+(R-26)*Math.sin(aN));ctx.stroke();
+  ctx.shadowBlur=0;ctx.lineWidth=1;
+  ctx.beginPath();ctx.arc(cx,cy,9,0,7);ctx.fillStyle=css("--ink");ctx.fill();
+}
+function drawCycMain(cv,C){
+  const W=cv.width=cv.clientWidth*2,H=cv.height=700;
+  const ctx=cv.getContext('2d');
+  const N=C.series.length,F=20,cur=C.series[N-1][1];
+  const idx=C.series.map(s=>s[1]/cur*100);
+  const L=64,Rm=56,Tp=26,B=44;
+  const X=i=>L+(W-L-Rm)*i/(N-1+F);
+  let lo=Math.min(...idx),hi=Math.max(...idx);
+  Object.entries(CYC_SCN).forEach(([k,s])=>{if(cycOn[k]){const p=scnPath(s);lo=Math.min(lo,...p);hi=Math.max(hi,...p);}});
+  lo-=6;hi+=8;
+  const Y=v=>Tp+(H-Tp-B)*(1-(v-lo)/(hi-lo));
+  for(const g of [70,85,100,115,130]){
+    if(g<lo||g>hi)continue;
+    ctx.strokeStyle=css("--grid");ctx.beginPath();ctx.moveTo(L,Y(g));ctx.lineTo(W-Rm,Y(g));ctx.stroke();
+    ctx.fillStyle=css("--muted");ctx.font="14px system-ui";ctx.textAlign="right";ctx.fillText(g,L-8,Y(g)+5);
+  }
+  C.series.forEach((s,i)=>{
+    if(s[0].endsWith("Q1")&&(+s[0].slice(0,4))%2===0){
+      ctx.fillStyle=css("--muted");ctx.font="14px system-ui";ctx.textAlign="center";
+      ctx.fillText(s[0].slice(0,4),X(i),H-12);}
+  });
+  for(let f=4;f<=F;f+=4){ctx.fillStyle=css("--muted");ctx.font="14px system-ui";ctx.textAlign="center";ctx.fillText("+"+(f/4)+"y",X(N-1+f),H-12);}
+  ctx.strokeStyle=css("--accent");ctx.setLineDash([5,5]);ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(X(N-1),Tp);ctx.lineTo(X(N-1),H-B);ctx.stroke();ctx.setLineDash([]);ctx.lineWidth=1;
+  ctx.fillStyle=css("--accent");ctx.font="bold 14px system-ui";ctx.textAlign="center";ctx.fillText("TODAY",X(N-1),Tp-6);
+  ctx.beginPath();
+  idx.forEach((v,i)=>{i?ctx.lineTo(X(i),Y(v)):ctx.moveTo(X(0),Y(v));});
+  ctx.strokeStyle=css("--s1");ctx.lineWidth=3.5;ctx.stroke();ctx.lineWidth=1;
+  const ann=[["2014Q2","2014 peak",-12],["2020Q4","2020 low: down 31%",24],["2023Q3","back to the old peak",-12]];
+  ann.forEach(([q,lab,dy])=>{
+    const i=C.series.findIndex(s=>s[0]===q);if(i<0)return;
+    ctx.beginPath();ctx.arc(X(i),Y(idx[i]),5,0,7);ctx.fillStyle=css("--ink");ctx.fill();
+    ctx.fillStyle=css("--ink2");ctx.font="14px system-ui";ctx.textAlign="center";ctx.fillText(lab,X(i),Y(idx[i])+dy);
+  });
+  Object.entries(CYC_SCN).forEach(([k,s])=>{
+    if(!cycOn[k])return;
+    const p=scnPath(s);
+    ctx.beginPath();
+    p.forEach((v,i)=>{const x=X(N-1+i),y=Y(v);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+    ctx.strokeStyle=s.c;ctx.lineWidth=2.5;ctx.setLineDash([7,5]);ctx.stroke();ctx.setLineDash([]);ctx.lineWidth=1;
+    ctx.fillStyle=s.c;ctx.font="13px system-ui";ctx.textAlign="left";
+    ctx.fillText(Math.round(p[20]),X(N-1+F)+5,Y(p[20])+4);
+  });
+  cv.onpointermove=e=>{
+    const b=cv.getBoundingClientRect(),x=(e.clientX-b.left)*(cv.width/b.width);
+    const pos=(x-L)/(cv.width-L-Rm)*(N-1+F);
+    if(pos<=N-1){
+      const i=Math.max(0,Math.min(N-1,Math.round(pos)));
+      showTip(e.clientX,e.clientY,tipNode(C.series[i][0].replace("Q"," Q"),[
+        [css("--s1"),"typical price",Math.round(C.series[i][1]).toLocaleString()+" /sqft"],
+        [null,"index (today=100)",(idx[i]).toFixed(1)]]));
+    }else{
+      const f=Math.max(0,Math.min(20,Math.round(pos-(N-1))));
+      showTip(e.clientX,e.clientY,tipNode("+"+(f/4).toFixed(1)+" years",
+        Object.entries(CYC_SCN).filter(([k])=>cycOn[k]).map(([k,s])=>
+          [s.c,k.split(" - ")[0],Math.round(scnPath(s)[f]/100*cur).toLocaleString()+" /sqft"])));
+    }
+  };
+  cv.onpointerleave=hideTip;
+}
 function render(){
   renderFilters();crumb();
+  if(S.mode==="cycle"){renderCycle();return;}
   if(S.mode==="yield"){renderYields();return;}
   const app=$("#app");app.innerHTML="";
   const m=S.mode,rows=aggRows(),yms=ymList();
