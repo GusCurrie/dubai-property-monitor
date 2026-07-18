@@ -444,7 +444,15 @@ function barListCard(title,hint,items,valueFmt,onClick){
   if(!items.length)c.append(Object.assign(CE("div","empty"),{textContent:"Not enough data for this selection (minimum sample thresholds apply)"}));
   return c;
 }
+const DEF_SC={"Apartment":16,"Villa/Townhouse":3,"Hospitality":22,"Office":18,"Retail":22,
+  "Warehouse/Industrial":8,"Building":12,"Land - Residential":0,"Land - Commercial":0,
+  "Land - Industrial":0,"Land - Other":0,"Other":12};
+function assump(){
+  if(!S.assump)S.assump={sc:Object.assign({},DEF_SC),vac:4,opex:11};
+  return S.assump;
+}
 function renderYields(){
+  const A=assump();
   const app=$("#app");app.innerHTML="";
   const cs=catIdxSet(),yms=ymList(),ymSet=new Set(yms);
   const inScope=r=>ymSet.has(r[0])&&cs.has(r[2])&&(!S.areas.size||S.areas.has(r[1]));
@@ -459,28 +467,25 @@ function renderYields(){
   const launch=wMed(ops.filter(r=>r[3]===0),5,4),resale=wMed(ops.filter(r=>r[3]===1),5,4);
   const prem=(launch&&resale)?(resale/launch-1)*100:null;
   const nS=sReady.reduce((s,r)=>s+r[5],0),nR=rNew.reduce((s,r)=>s+r[4],0);
-  /* KPIs */
+  /* KPIs (city net computed after per-area pass) */
   const kw=CE("div");kw.id="kpis";
-  [["Gross yield (psf basis)",cityYield!=null?cityYield.toFixed(1)+"%":"—"],
-   ["Reversion: new vs renewed",rev!=null?(rev>=0?"+":"")+rev.toFixed(1)+"%":"—"],
-   ["Off-plan resale vs launch",prem!=null?(prem>=0?"+":"")+prem.toFixed(1)+"%":"—"],
-   ["Ready sales in window",fmt(nS)],
-   ["New leases in window",fmt(nR)]].forEach(([lb,v])=>{
-    const t=CE("div","kpi");const l=CE("div","lb");l.textContent=lb;
-    const vv=CE("div","v");vv.textContent=v;t.append(l,vv);kw.append(t);
-  });
   app.append(kw);
   /* within-class computation, volume-weighted across classes — avoids apartment/villa mix artifacts */
   const byAreaCat=src=>{const o={};src.forEach(r=>{const k=r[1]+"_"+r[2];(o[k]=o[k]||[]).push(r);});return o;};
   const aS=byAreaCat(sReady),aN=byAreaCat(rNew),aR=byAreaCat(rRen);
+  const netOf=(rp,sp,ci)=>{
+    const scv=A.sc[D.cats[ci]]||0;
+    return ((rp*(1-A.vac/100)*(1-A.opex/100))-scv)/sp*100;
+  };
   const yAcc={},rAcc={};
   Object.keys(aN).forEach(k=>{
-    const ai=+k.split("_")[0];
+    const ai=+k.split("_")[0],ci=+k.split("_")[1];
     const ns=(aS[k]||[]).reduce((s,r)=>s+r[5],0),nr=aN[k].reduce((s,r)=>s+r[4],0);
     if(ns>=NMIN&&nr>=NMIN){
       const sp=wMed(aS[k],7,5),rp=wMed(aN[k],6,4);
-      if(sp&&rp){const a=yAcc[ai]=yAcc[ai]||{w:0,y:0,ns:0,nr:0,rp:0,sp:0};
-        const w=Math.min(ns,nr);a.w+=w;a.y+=rp/sp*100*w;a.ns+=ns;a.nr+=nr;a.rp+=rp*w;a.sp+=sp*w;}
+      if(sp&&rp){const a=yAcc[ai]=yAcc[ai]||{w:0,y:0,net:0,ns:0,nr:0,rp:0,sp:0};
+        const w=Math.min(ns,nr);a.w+=w;a.y+=rp/sp*100*w;a.net+=netOf(rp,sp,ci)*w;
+        a.ns+=ns;a.nr+=nr;a.rp+=rp*w;a.sp+=sp*w;}
     }
     const nren=(aR[k]||[]).reduce((s,r)=>s+r[4],0);
     if(nr>=NMIN&&nren>=NMIN){
@@ -489,15 +494,44 @@ function renderYields(){
         const w=Math.min(nr,nren);a.w+=w;a.v+=(np/pp-1)*100*w;a.np+=np*w;a.pp+=pp*w;}
     }
   });
-  const yieldItems=Object.entries(yAcc).map(([ai,a])=>({name:D.areas[ai],ai:+ai,val:a.y/a.w,
-    extra:` · ${fmt(a.nr)} leases`,tip:[[css("--s1"),"Rent AED/sqft/yr",Math.round(a.rp/a.w)],[css("--s2"),"Price AED/sqft",Math.round(a.sp/a.w)],[null,"Ready sales / new leases",`${fmt(a.ns)} / ${fmt(a.nr)}`]]}));
+  const yieldItems=Object.entries(yAcc).map(([ai,a])=>({name:D.areas[ai],ai:+ai,val:a.net/a.w,gross:a.y/a.w,
+    extra:` net · ${(a.y/a.w).toFixed(1)}% gross`,tip:[[css("--s1"),"Rent AED/sqft/yr",Math.round(a.rp/a.w)],[css("--s2"),"Price AED/sqft",Math.round(a.sp/a.w)],[null,"Ready sales / new leases",`${fmt(a.ns)} / ${fmt(a.nr)}`]]}));
   const revItems=Object.entries(rAcc).map(([ai,a])=>({name:D.areas[ai],val:a.v/a.w,
     extra:` · new ${Math.round(a.np/a.w)} vs ren ${Math.round(a.pp/a.w)}`}));
   /* plausibility bands: entries outside are data artefacts (mismatched stock, bad areas) */
-  const yieldShown=yieldItems.filter(x=>x.val>=1&&x.val<=15).sort((a,b)=>b.val-a.val);
+  const yieldShown=yieldItems.filter(x=>x.gross>=1&&x.gross<=15).sort((a,b)=>b.val-a.val);
   const revShown=revItems.filter(x=>Math.abs(x.val)<=80).sort((a,b)=>b.val-a.val);
+  let nw=0,nsum=0;Object.values(yAcc).forEach(a=>{nw+=a.w;nsum+=a.net;});
+  const cityNet=nw?nsum/nw:null;
+  [["Gross yield (psf basis)",cityYield!=null?cityYield.toFixed(1)+"%":"–"],
+   ["Net yield (after assumptions)",cityNet!=null?cityNet.toFixed(1)+"%":"–"],
+   ["Reversion: new vs renewed",rev!=null?(rev>=0?"+":"")+rev.toFixed(1)+"%":"–"],
+   ["Off-plan resale vs launch",prem!=null?(prem>=0?"+":"")+prem.toFixed(1)+"%":"–"],
+   ["Ready sales / new leases",fmt(nS)+" / "+fmt(nR)]].forEach(([lb,v])=>{
+    const t=CE("div","kpi");const l=CE("div","lb");l.textContent=lb;
+    const vv=CE("div","v");vv.textContent=v;t.append(l,vv);kw.append(t);
+  });
+  const ac=CE("div","card");
+  const ah=CE("h3");ah.textContent="Net-yield assumptions";ac.append(ah);
+  const ahint=CE("div","hint");
+  ahint.textContent="Edit and every net figure recomputes. Defaults: service charges from published 2025–26 indices; vacancy from Ejari void evidence (~3–4%); opex (management, maintenance, insurance) analyst assumption. Net = (rent × (1−vacancy) × (1−opex) − SC) ÷ price, psf basis.";
+  ac.append(ahint);
+  const bar=CE("div","toolbar");
+  const addInput=(label,val,fn)=>{
+    const wrapEl=CE("span");const lb=CE("span","flabel");lb.textContent=label;
+    const inp=CE("input");inp.type="number";inp.step="0.5";inp.value=val;
+    inp.style.cssText="width:64px;border:1px solid var(--border);background:var(--surface);color:var(--ink);border-radius:7px;padding:4px 6px;font:inherit;margin-left:4px";
+    inp.onchange=()=>{fn(parseFloat(inp.value)||0);render();};
+    wrapEl.append(lb,inp);bar.append(wrapEl);
+  };
+  catList().filter(c=>DEF_SC[c]>0||A.sc[c]>0).forEach(c=>addInput("SC "+c+" (AED/sqft)",A.sc[c],v=>A.sc[c]=v));
+  addInput("Vacancy %",A.vac,v=>A.vac=v);
+  addInput("Opex %",A.opex,v=>A.opex=v);
+  const rst=CE("button","iconbtn");rst.textContent="Reset";rst.onclick=()=>{S.assump=null;render();};
+  bar.append(rst);ac.append(bar);
+  app.append(ac);
   const g=CE("div","grid2");
-  g.append(barListCard("Gross yield by area",`Median new-lease AED/sqft/yr ÷ median ready-sale AED/sqft over the selected period — min ${NMIN} of each. Click to drill`,
+  g.append(barListCard("Net yield by area (gross alongside)",`New leases vs ready sales, psf basis, less assumptions above (min ${NMIN} of each). Click to drill`,
     yieldShown.slice(0,18),v=>v.toFixed(1)+"%",x=>{S.areas=new Set([x.ai]);render();}));
   g.append(barListCard("Reversion by area: new-lease premium over renewals",
     "How far market (new) rents sit above in-place (renewed) rents — the uplift a reviewed unit reverts to",
